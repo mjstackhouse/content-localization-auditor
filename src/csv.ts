@@ -1,13 +1,8 @@
 import type { ItemCoverageRow, KontentLanguage } from "./types";
 import { MISSING_VARIANT } from "./types";
 
-const FIXED_COLUMNS = [
-  "Content item name",
-  "Content type",
-  "Collection",
-  "URL slug (default language)",
-  "Missing language count",
-] as const;
+const FIXED_COLUMNS = ["Content item name", "Content type", "Collection", "Missing language count"] as const;
+const URL_SLUG_COLUMN = "URL slug (default language)";
 
 function escapeCsvField(value: string): string {
   if (/[",\n]/.test(value)) {
@@ -16,8 +11,13 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
-export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[]): string {
-  const header = [...FIXED_COLUMNS, ...allLanguages.map((l) => l.name)];
+export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[], includeUrlSlug: boolean): string {
+  const header = [
+    ...FIXED_COLUMNS.slice(0, 3),
+    ...(includeUrlSlug ? [URL_SLUG_COLUMN] : []),
+    ...FIXED_COLUMNS.slice(3),
+    ...allLanguages.map((l) => l.name),
+  ];
   const lines = [header.map(escapeCsvField).join(",")];
 
   for (const row of rows) {
@@ -25,7 +25,7 @@ export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[
       row.itemName,
       row.contentType,
       row.collection,
-      row.urlSlug,
+      ...(includeUrlSlug ? [row.urlSlug] : []),
       String(row.missingLanguageCount),
       ...allLanguages.map((l) => row.languageStatus.get(l.codename) ?? MISSING_VARIANT),
     ];
@@ -35,8 +35,13 @@ export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[
   return lines.join("\n");
 }
 
-export function downloadCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[], filename: string): void {
-  const csv = buildCsv(rows, allLanguages);
+export function downloadCsv(
+  rows: ItemCoverageRow[],
+  allLanguages: KontentLanguage[],
+  includeUrlSlug: boolean,
+  filename: string,
+): void {
+  const csv = buildCsv(rows, allLanguages, includeUrlSlug);
   // Excel guesses a CSV's encoding when opened by double-click, and without
   // this BOM it usually guesses wrong for UTF-8 — multi-byte characters
   // (emoji, accented letters) come out as mojibake. The BOM tells Excel

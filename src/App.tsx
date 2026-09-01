@@ -44,6 +44,7 @@ function App() {
   const [apiKey, setApiKey] = useState("");
   const [includeUnpublished, setIncludeUnpublished] = useState(false);
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
+  const [includeUrlSlug, setIncludeUrlSlug] = useState(false);
 
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -69,6 +70,10 @@ function App() {
   const [allRows, setAllRows] = useState<ItemCoverageRow[]>([]);
   // Every language the current report's columns are built from, default language first.
   const [allLanguages, setAllLanguages] = useState<KontentLanguage[]>([]);
+  // Whether allRows actually has slug data — a snapshot of includeUrlSlug at
+  // crawl time, since toggling the live checkbox afterward without
+  // re-running the export wouldn't change what's actually in memory.
+  const [rowsHaveUrlSlug, setRowsHaveUrlSlug] = useState(false);
 
   const displayedRows = useMemo(
     () => (onlyIncomplete ? allRows.filter((r) => r.missingLanguageCount > 0) : allRows),
@@ -141,6 +146,7 @@ function App() {
     setHasConnected(false);
     setAllRows([]);
     setAllLanguages([]);
+    setRowsHaveUrlSlug(false);
   }
 
   function toggleType(codename: string) {
@@ -183,17 +189,20 @@ function App() {
 
     // URL slugs are usually per-language, so this only ever reads the
     // default-language variant's slug rather than pretending to speak for
-    // every language. Only the default language's crawl needs to actually
-    // request the element(s) that hold it — everything else stays on the
-    // zero-payload path.
-    const slugElementCodenames = Array.from(
-      new Set(
-        contentTypes
-          .filter((t) => selectedTypeCodenames.has(t.codename))
-          .map((t) => t.slugElementCodename)
-          .filter((c): c is string => !!c),
-      ),
-    );
+    // every language. An explicit opt-in, since that scoping only makes
+    // sense when a customer's slugs are actually shared across languages —
+    // when unchecked, this stays empty and the default-language crawl never
+    // requests these elements at all, so there's no cost either.
+    const slugElementCodenames = includeUrlSlug
+      ? Array.from(
+          new Set(
+            contentTypes
+              .filter((t) => selectedTypeCodenames.has(t.codename))
+              .map((t) => t.slugElementCodename)
+              .filter((c): c is string => !!c),
+          ),
+        )
+      : [];
 
     try {
       // A small worker pool, not one request-per-language in parallel — that
@@ -351,6 +360,7 @@ function App() {
       const incompleteCount = coverageRows.filter((r) => r.missingLanguageCount > 0).length;
       setAllLanguages(orderedLanguages);
       setAllRows(coverageRows);
+      setRowsHaveUrlSlug(includeUrlSlug);
       setSummary(`Done. Found ${coverageRows.length} item(s) total, ${incompleteCount} with at least one missing translation.`);
       setStage("done");
 
@@ -359,7 +369,7 @@ function App() {
       // result of a click, and this fires well after the one that started
       // the export) and a way to re-export after toggling the checkbox.
       const rowsToExport = onlyIncomplete ? coverageRows.filter((r) => r.missingLanguageCount > 0) : coverageRows;
-      downloadCsv(rowsToExport, orderedLanguages, `localization-audit-${environmentId.trim()}.csv`);
+      downloadCsv(rowsToExport, orderedLanguages, includeUrlSlug, `localization-audit-${environmentId.trim()}.csv`);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setStage("error");
@@ -492,7 +502,7 @@ function App() {
 
           <div className="basis-full border-t border-(--dark-gray) pt-6 mb-6">
             <p className="section-heading mb-3">Export options</p>
-            <label className="basis-full flex items-center gap-2 text-[14px]">
+            <label className="basis-full flex items-center gap-2 mb-3 text-[14px]">
               <input
                 type="checkbox"
                 checked={onlyIncomplete}
@@ -501,6 +511,18 @@ function App() {
                 className="accent-(--purple)"
               />
               Only export items with at least one missing translation
+            </label>
+
+            <label className="basis-full flex items-center gap-2 text-[14px]">
+              <input
+                type="checkbox"
+                checked={includeUrlSlug}
+                onChange={(e) => setIncludeUrlSlug(e.target.checked)}
+                disabled={isRunning}
+                className="accent-(--purple)"
+              />
+              Include URL slug
+              <Tooltip text="Adds each item's URL slug — but only from its default-language variant, since a slug is usually different per language. This is most useful when a content type's slug is shared across languages rather than translated separately; otherwise it will only reflect the default language's URL." />
             </label>
           </div>
 
@@ -548,7 +570,9 @@ function App() {
           <div className="flex items-center justify-between">
             <h2 className="section-heading">{displayedRows.length} of {allRows.length} item(s) exported</h2>
             <button
-              onClick={() => downloadCsv(displayedRows, allLanguages, `localization-audit-${environmentId}.csv`)}
+              onClick={() =>
+                downloadCsv(displayedRows, allLanguages, rowsHaveUrlSlug, `localization-audit-${environmentId}.csv`)
+              }
               disabled={displayedRows.length === 0}
               className="btn continue-btn"
             >
