@@ -222,7 +222,7 @@ function App() {
           if (variant) {
             let status = variant.workflow_step ?? (usePreview ? "unknown" : "published");
             if (status !== "published" && publishedItemsByLanguage.get(lang.codename)?.has(itemCodename)) {
-              status = `${status} (also published)`;
+              status = `${status}/published`;
             }
             languageStatus.set(lang.codename, status);
             if (!representative) representative = variant;
