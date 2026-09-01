@@ -168,7 +168,6 @@ select {
 
 summary {
   list-style: none;
-  padding: 12px 12px 12px 0px;
 }
 
 summary::-webkit-details-marker {
@@ -177,6 +176,9 @@ summary::-webkit-details-marker {
 
 details > summary {
   transition: background 0.2s;
+  /* Left padding reserves room for the chevron icon below so it doesn't
+     overlap the summary's text content. */
+  padding: 12px 12px 12px 32px;
   box-sizing: border-box;
   position: relative;
   cursor: pointer;
@@ -186,12 +188,11 @@ details > summary {
 details > summary::before {
   content: '';
   position: absolute;
-  left: 0;
+  left: 4px;
   top: 50%;
   transform: translateY(-50%) rotate(0deg);
   width: 24px;
   height: 24px;
-  margin-left: 4px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1' stroke='%23151515'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
   background-size: contain;
   background-repeat: no-repeat;
@@ -204,11 +205,6 @@ details > summary::before {
 
 details[open] > summary::before {
   transform: translateY(-50%) rotate(180deg);
-}
-
-summary > div {
-  display: inline-block;
-  width: calc(100% - 35px);
 }
 
 summary:hover {
