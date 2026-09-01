@@ -460,16 +460,19 @@ function App() {
             </details>
           </fieldset>
 
-          <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
-            <input
-              type="checkbox"
-              checked={onlyIncomplete}
-              onChange={(e) => setOnlyIncomplete(e.target.checked)}
-              disabled={isRunning}
-              className="accent-(--purple)"
-            />
-            Only export items with at least one missing translation
-          </label>
+          <div className="basis-full border-t border-(--dark-gray) pt-6 mb-6">
+            <p className="section-heading mb-3">Export options</p>
+            <label className="basis-full flex items-center gap-2 text-[14px]">
+              <input
+                type="checkbox"
+                checked={onlyIncomplete}
+                onChange={(e) => setOnlyIncomplete(e.target.checked)}
+                disabled={isRunning}
+                className="accent-(--purple)"
+              />
+              Only export items with at least one missing translation
+            </label>
+          </div>
 
           <div className="basis-full flex justify-end gap-3">
             {isRunning ? (
