@@ -1,0 +1,172 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --orange: rgb(250, 74, 25);
+  --lighter-orange: rgb(255, 231, 224);
+  --warning-yellow: rgb(249, 166, 0);
+  --purple: rgb(91, 79, 245);
+  --darker-purple: rgb(59, 35, 241);
+  --lighter-purple: rgb(222, 221, 253);
+  --red: rgb(219, 0, 0);
+  --darker-red: rgb(169, 0, 0);
+  --lighter-black: rgb(21, 21, 21);
+  --green: rgb(0, 127, 81);
+  --light-gray: rgb(243, 243, 243);
+  --dark-gray: rgb(230, 230, 230);
+  --color-gray-100: rgb(243, 244, 246);
+  --color-gray-300: rgb(209, 213, 219);
+  --color-gray-400: rgb(156, 163, 175);
+  --color-gray-500: rgb(107, 114, 128);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+html {
+  font-family: 'Inter', sans-serif;
+  font-optical-sizing: auto;
+  font-weight: 400;
+  font-style: normal;
+  font-size: 12px;
+}
+
+#app-title {
+  font-weight: 700;
+  font-stretch: 100%;
+  font-kerning: auto;
+  font-size: 12px;
+  line-height: 18px;
+  letter-spacing: 0.825852px;
+  text-transform: uppercase;
+  background: linear-gradient(to right, var(--darker-purple), var(--orange) 75%);
+}
+
+.section-heading {
+  font-weight: 700;
+  font-stretch: 100%;
+  font-kerning: auto;
+  font-size: 16px;
+}
+
+.btn {
+  border-radius: 9999px;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-kerning: auto;
+  font-size: 12px;
+  height: 40px;
+  line-height: 18px;
+  letter-spacing: 0.825852px;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0 22px;
+}
+
+.back-btn {
+  border-color: var(--purple);
+  border-style: solid;
+  border-width: 2px;
+  background-color: white;
+  color: var(--lighter-black);
+}
+
+.back-btn:hover:enabled {
+  background-color: var(--lighter-purple);
+  cursor: pointer;
+}
+
+.continue-btn {
+  background-color: var(--purple);
+  color: white;
+}
+
+.continue-btn:disabled {
+  color: rgb(226 232 240);
+  background-color: rgb(100 116 139);
+  cursor: not-allowed;
+}
+
+.continue-btn:hover:enabled {
+  color: white;
+  background-color: var(--darker-purple);
+  cursor: pointer;
+}
+
+label {
+  font-size: 14px;
+}
+
+input,
+select {
+  font-size: 14px;
+}
+
+input[type="text"],
+input[type="password"] {
+  flex-basis: 100%;
+  border: 1px solid var(--color-gray-400);
+  border-radius: 9999px;
+  padding: 0.375rem 0.75rem;
+  background-color: white;
+}
+
+input[type="text"]:hover,
+input[type="text"]:focus,
+input[type="password"]:hover,
+input[type="password"]:focus,
+select:focus {
+  border-color: var(--lighter-black);
+  outline: none;
+}
+
+select {
+  border: 1px solid var(--color-gray-400);
+  border-radius: 9999px;
+  padding: 0.375rem 0.75rem;
+  background-color: white;
+}
+
+.tooltip-icon,
+.tooltip-icon-small {
+  border-radius: 4px;
+  margin-left: 0.35rem;
+  color: var(--lighter-black);
+}
+
+.tooltip-icon {
+  padding: 1px 5px;
+}
+
+.tooltip-icon:hover,
+.tooltip-icon-small:hover {
+  background-color: rgba(21, 21, 21, 0.1);
+  cursor: help;
+}
+
+.message-icon-section {
+  min-width: 32px;
+  justify-content: center;
+}
+
+/* Animation from: https://www.w3schools.com/howto/howto_css_loader.asp */
+.loading-span {
+  display: inline-block;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.5);
+  border-top: 3px solid white;
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

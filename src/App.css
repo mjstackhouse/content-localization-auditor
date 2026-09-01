@@ -1,0 +1,12 @@
+#root {
+  max-width: 100%;
+  min-height: 100vh;
+  padding: 6rem 3rem 3rem 3rem;
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  #root {
+    padding: 6rem 1.25rem 2rem 1.25rem;
+  }
+}
