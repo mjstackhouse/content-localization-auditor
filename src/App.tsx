@@ -419,10 +419,7 @@ function App() {
             <details className="basis-full flex flex-wrap" open>
               <summary className="basis-full">
                 <div className="relative">
-                  <legend className="section-heading">
-                    Content types
-                    <Tooltip text="Only items of the selected content types are included in the audit." />
-                  </legend>
+                  <legend className="section-heading">Content types</legend>
                 </div>
               </summary>
 
