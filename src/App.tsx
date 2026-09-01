@@ -2,11 +2,11 @@ import { useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import "./App.css";
 import { fetchAllContentTypes, fetchAllItemsForLanguage, fetchAllLanguages } from "./kontentApi";
-import type { KontentLanguage, ItemSystem, ItemCoverageRow } from "./types";
+import type { KontentLanguage, KontentContentType, ItemSystem, ItemCoverageRow } from "./types";
 import { MISSING_VARIANT } from "./types";
 import { downloadCsv } from "./csv";
 
-type Stage = "idle" | "running" | "done" | "error";
+type Stage = "idle" | "connecting" | "ready" | "running" | "done" | "error";
 
 // Kontent.ai marks the environment's actual default language with this fixed language ID.
 const DEFAULT_LANGUAGE_ID = "00000000-0000-0000-0000-000000000000";
@@ -42,8 +42,8 @@ function ErrorMessage({ text }: { text: string }) {
 function App() {
   const [environmentId, setEnvironmentId] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [onlyIncomplete, setOnlyIncomplete] = useState(true);
   const [includeUnpublished, setIncludeUnpublished] = useState(false);
+  const [onlyIncomplete, setOnlyIncomplete] = useState(true);
 
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -58,6 +58,12 @@ function App() {
   const [summary, setSummary] = useState("");
 
   const [languages, setLanguages] = useState<KontentLanguage[]>([]);
+  const [contentTypes, setContentTypes] = useState<KontentContentType[]>([]);
+  const [defaultLanguage, setDefaultLanguage] = useState<KontentLanguage | null>(null);
+  const [selectedTypeCodenames, setSelectedTypeCodenames] = useState<Set<string>>(new Set());
+  // Distinguishes an error from step 1 (connect) vs. step 2 (export) — can't
+  // use contentTypes.length for this, since a real environment could have zero.
+  const [hasConnected, setHasConnected] = useState(false);
 
   // Every item found in any language, unfiltered — the full coverage matrix.
   const [allRows, setAllRows] = useState<ItemCoverageRow[]>([]);
@@ -70,17 +76,90 @@ function App() {
   );
 
   const abortRef = useRef<AbortController | null>(null);
-  // Preview mode is an explicit opt-in now, not implied by "a key was given" —
-  // a key may only be there for Secure Access on the published endpoint.
+  // Preview mode is an explicit opt-in, not implied by "a key was given" — a
+  // key may only be there for Secure Access on the published endpoint.
   const usePreview = includeUnpublished;
+  const allTypesSelected = contentTypes.length > 0 && selectedTypeCodenames.size === contentTypes.length;
 
   function appendLog(message: string) {
     setLog((prev) => [...prev, message]);
   }
 
-  async function handleExport() {
+  async function handleConnect() {
     if (!environmentId.trim()) {
       setErrorMessage("Please enter an environment ID.");
+      return;
+    }
+
+    setStage("connecting");
+    setErrorMessage("");
+    setLog([]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      appendLog("Fetching languages...");
+      const langs = await fetchAllLanguages(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
+      appendLog(`Found ${langs.length} language(s).`);
+
+      appendLog("Fetching content types...");
+      const types = await fetchAllContentTypes(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
+      appendLog(`Found ${types.length} content type(s).`);
+
+      const foundDefault = langs.find((l) => l.id === DEFAULT_LANGUAGE_ID);
+      if (!foundDefault) {
+        appendLog(`Warning: no language with ID ${DEFAULT_LANGUAGE_ID} was returned; falling back to the first language in the list.`);
+      }
+      const defLang = foundDefault ?? langs[0] ?? null;
+      if (!defLang) {
+        throw new Error("This environment has no languages configured.");
+      }
+
+      setLanguages(langs);
+      setContentTypes(types);
+      setDefaultLanguage(defLang);
+      setSelectedTypeCodenames(new Set(types.map((t) => t.codename)));
+      setHasConnected(true);
+      setStage("ready");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setStage("error");
+    }
+  }
+
+  function handleBack() {
+    setStage("idle");
+    setErrorMessage("");
+    setLog([]);
+    setLanguageProgress(new Map());
+    setPublishedProgress(new Map());
+    setSummary("");
+    setLanguages([]);
+    setContentTypes([]);
+    setDefaultLanguage(null);
+    setSelectedTypeCodenames(new Set());
+    setHasConnected(false);
+    setAllRows([]);
+    setAllLanguages([]);
+  }
+
+  function toggleType(codename: string) {
+    setSelectedTypeCodenames((prev) => {
+      const next = new Set(prev);
+      if (next.has(codename)) next.delete(codename);
+      else next.add(codename);
+      return next;
+    });
+  }
+
+  function toggleSelectAllTypes(checked: boolean) {
+    setSelectedTypeCodenames(checked ? new Set(contentTypes.map((t) => t.codename)) : new Set());
+  }
+
+  async function handleExport() {
+    if (!defaultLanguage) return;
+    if (selectedTypeCodenames.size === 0) {
+      setErrorMessage("Please select at least one content type.");
       return;
     }
 
@@ -95,27 +174,13 @@ function App() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Omit the filter entirely when every type is selected — equivalent
+    // result, shorter query string, and avoids missing a type that's added
+    // to the environment mid-crawl (however unlikely).
+    const typeFilter = allTypesSelected ? undefined : Array.from(selectedTypeCodenames);
+    const typeNameByCodename = new Map(contentTypes.map((t) => [t.codename, t.name]));
+
     try {
-      appendLog("Fetching languages...");
-      const langs = await fetchAllLanguages(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
-      appendLog(`Found ${langs.length} language(s).`);
-
-      appendLog("Fetching content types...");
-      const types = await fetchAllContentTypes(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
-      appendLog(`Found ${types.length} content type(s).`);
-
-      setLanguages(langs);
-      const typeNameByCodename = new Map(types.map((t) => [t.codename, t.name]));
-
-      const foundDefault = langs.find((l) => l.id === DEFAULT_LANGUAGE_ID);
-      if (!foundDefault) {
-        appendLog(`Warning: no language with ID ${DEFAULT_LANGUAGE_ID} was returned; falling back to the first language in the list.`);
-      }
-      const defLang = foundDefault ?? langs[0] ?? null;
-      if (!defLang) {
-        throw new Error("This environment has no languages configured.");
-      }
-
       // A small worker pool, not one request-per-language in parallel — that
       // would still respect the rate limit for a handful of languages, but
       // stays well-behaved as the count grows. Used for both the main crawl
@@ -145,6 +210,7 @@ function App() {
               lang.codename,
               controller.signal,
               (count) => setProgress(lang.codename, `${startMessage}... ${count} so far`),
+              typeFilter,
             );
             const byCodename = new Map<string, ItemSystem>();
             for (const item of items) byCodename.set(item.codename, item);
@@ -159,7 +225,7 @@ function App() {
 
       const itemsByLanguage = new Map<string, Map<string, ItemSystem>>();
       await crawlLanguages(
-        langs,
+        languages,
         usePreview,
         itemsByLanguage,
         setLanguageProgress,
@@ -168,7 +234,7 @@ function App() {
       );
 
       // Default language first, so it reads as the reference/source column.
-      const orderedLanguages = [defLang, ...langs.filter((l) => l.codename !== defLang.codename)];
+      const orderedLanguages = [defaultLanguage, ...languages.filter((l) => l.codename !== defaultLanguage.codename)];
 
       // Kontent.ai lets a variant have a newer, unpublished version sitting on
       // top of an already-published one — the Preview API only ever returns
@@ -271,7 +337,8 @@ function App() {
     abortRef.current?.abort();
   }
 
-  const isBusy = stage === "running";
+  const isConnecting = stage === "connecting";
+  const isRunning = stage === "running";
 
   return (
     <div className="max-w-5xl mx-auto flex flex-wrap">
@@ -284,76 +351,145 @@ function App() {
         content that's missing variants.
       </p>
 
-      <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
-        <div className="basis-full flex flex-wrap mb-6">
-          <label htmlFor="environment-id" className="basis-full text-left mb-2 font-bold">
-            Environment ID
-            <Tooltip text="Found under Environment settings, or in the app.kontent.ai/<environment-id> URL." />
+      {(stage === "idle" || stage === "connecting" || (stage === "error" && !hasConnected)) && (
+        <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
+          <div className="basis-full flex flex-wrap mb-6">
+            <label htmlFor="environment-id" className="basis-full text-left mb-2 font-bold">
+              Environment ID
+              <Tooltip text="Found under Environment settings, or in the app.kontent.ai/<environment-id> URL." />
+            </label>
+            <input
+              type="text"
+              id="environment-id"
+              value={environmentId}
+              onChange={(e) => setEnvironmentId(e.target.value)}
+              placeholder="e.g. 975bf280-fd91-488c-994c-2f04416e5ee3"
+              disabled={isConnecting}
+              className="basis-full"
+            />
+          </div>
+
+          <div className="basis-full flex flex-wrap mb-4">
+            <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
+              Delivery API key
+              <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
+            </label>
+            <input
+              type="password"
+              id="api-key"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Required if your environment has Secure Access enabled"
+              disabled={isConnecting}
+              className="basis-full"
+            />
+          </div>
+
+          <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
+            <input
+              type="checkbox"
+              checked={includeUnpublished}
+              onChange={(e) => setIncludeUnpublished(e.target.checked)}
+              disabled={isConnecting}
+              className="accent-(--purple)"
+            />
+            Include unpublished/draft content
+            <Tooltip text="Off by default: only published content is scanned, matching what's actually live today, and the API key (if any) only needs 'Secure access' permission. Check this to also see in-progress translations that haven't been published yet — the key then needs 'Content preview' permission too." />
           </label>
-          <input
-            type="text"
-            id="environment-id"
-            value={environmentId}
-            onChange={(e) => setEnvironmentId(e.target.value)}
-            placeholder="e.g. 975bf280-fd91-488c-994c-2f04416e5ee3"
-            disabled={isBusy}
-            className="basis-full"
-          />
-        </div>
 
-        <div className="basis-full flex flex-wrap mb-4">
-          <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
-            Delivery API key
-            <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
-          </label>
-          <input
-            type="password"
-            id="api-key"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Required if your environment has Secure Access enabled"
-            disabled={isBusy}
-            className="basis-full"
-          />
-        </div>
-
-        <label className="basis-full flex items-center gap-2 mb-3 text-[14px]">
-          <input
-            type="checkbox"
-            checked={includeUnpublished}
-            onChange={(e) => setIncludeUnpublished(e.target.checked)}
-            disabled={isBusy}
-            className="accent-(--purple)"
-          />
-          Include unpublished/draft content
-          <Tooltip text="Off by default: only published content is scanned, matching what's actually live today, and the API key (if any) only needs 'Secure access' permission. Check this to also see in-progress translations that haven't been published yet — the key then needs 'Content preview' permission too." />
-        </label>
-
-        <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
-          <input
-            type="checkbox"
-            checked={onlyIncomplete}
-            onChange={(e) => setOnlyIncomplete(e.target.checked)}
-            disabled={isBusy}
-            className="accent-(--purple)"
-          />
-          Only export items with at least one missing translation
-        </label>
-
-        <div className="basis-full flex justify-end gap-3">
-          {isBusy && (
-            <button onClick={handleCancel} className="btn back-btn">
-              Cancel
+          <div className="basis-full flex justify-end gap-3">
+            {isConnecting && (
+              <button onClick={handleCancel} className="btn back-btn">
+                Cancel
+              </button>
+            )}
+            <button onClick={handleConnect} disabled={isConnecting} className="btn continue-btn inline-flex items-center">
+              {isConnecting && <span className="loading-span" />}
+              {isConnecting ? "Connecting..." : "Continue"}
             </button>
-          )}
-          <button onClick={handleExport} disabled={isBusy} className="btn continue-btn inline-flex items-center">
-            {isBusy && <span className="loading-span" />}
-            {isBusy ? "Exporting..." : "Export report"}
-          </button>
-        </div>
+          </div>
 
-        {errorMessage && <ErrorMessage text={errorMessage} />}
-      </section>
+          {errorMessage && <ErrorMessage text={errorMessage} />}
+        </section>
+      )}
+
+      {(stage === "ready" || stage === "running" || stage === "done" || (stage === "error" && hasConnected)) && (
+        <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
+          <fieldset className="basis-full flex flex-wrap mb-6">
+            <details className="basis-full flex flex-wrap" open>
+              <summary className="basis-full">
+                <div className="relative">
+                  <legend className="section-heading">
+                    Content types
+                    <Tooltip text="Only items of the selected content types are included in the audit." />
+                  </legend>
+                </div>
+              </summary>
+
+              <div className="basis-full flex mb-3 pl-10">
+                <label htmlFor="select-all-types" className="input-container relative flex items-center">
+                  <input
+                    type="checkbox"
+                    id="select-all-types"
+                    checked={allTypesSelected}
+                    onChange={(e) => toggleSelectAllTypes(e.target.checked)}
+                    disabled={isRunning}
+                    className="mr-2 accent-(--purple)"
+                  />
+                  Select all
+                </label>
+              </div>
+
+              <div className="pl-18 flex flex-wrap">
+                {contentTypes.map((type) => (
+                  <div className="flex flex-wrap basis-full mb-3" key={type.codename}>
+                    <label htmlFor={type.codename} className="input-container relative flex items-center">
+                      <input
+                        type="checkbox"
+                        id={type.codename}
+                        checked={selectedTypeCodenames.has(type.codename)}
+                        onChange={() => toggleType(type.codename)}
+                        disabled={isRunning}
+                        className="mr-2 accent-(--purple)"
+                      />
+                      {type.name}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </fieldset>
+
+          <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
+            <input
+              type="checkbox"
+              checked={onlyIncomplete}
+              onChange={(e) => setOnlyIncomplete(e.target.checked)}
+              disabled={isRunning}
+              className="accent-(--purple)"
+            />
+            Only export items with at least one missing translation
+          </label>
+
+          <div className="basis-full flex justify-end gap-3">
+            {isRunning ? (
+              <button onClick={handleCancel} className="btn back-btn">
+                Cancel
+              </button>
+            ) : (
+              <button onClick={handleBack} className="btn back-btn">
+                Back
+              </button>
+            )}
+            <button onClick={handleExport} disabled={isRunning} className="btn continue-btn inline-flex items-center">
+              {isRunning && <span className="loading-span" />}
+              {isRunning ? "Exporting..." : "Export report"}
+            </button>
+          </div>
+
+          {errorMessage && <ErrorMessage text={errorMessage} />}
+        </section>
+      )}
 
       {(log.length > 0 || languageProgress.size > 0 || publishedProgress.size > 0) && (
         <section className="basis-full bg-(--light-gray) rounded-xl p-4 mb-6 font-mono text-[12px] text-(--lighter-black) max-h-52 overflow-y-auto">
@@ -387,8 +523,8 @@ function App() {
             </button>
           </div>
           <p className="text-[12px] text-(--color-gray-500) mt-4">
-            The download should have started automatically. If it didn't, or you toggled the
-            checkbox above and want a re-filtered file, use the button.
+            The download should have started automatically. If it didn't, or you changed the
+            selection above and want a re-filtered file, use the button.
           </p>
         </section>
       )}

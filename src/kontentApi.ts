@@ -99,6 +99,7 @@ export async function fetchAllItemsForLanguage(
   languageCodename: string,
   signal: AbortSignal,
   onPage?: (itemsSoFar: number) => void,
+  typeCodenames?: string[],
 ): Promise<ItemSystem[]> {
   const result: ItemSystem[] = [];
   const qs = new URLSearchParams({
@@ -117,6 +118,11 @@ export async function fetchAllItemsForLanguage(
     // item.system — this cuts response payloads by ~90% in testing.
     elements: '""',
   });
+  // Scoping to specific content types up front shrinks the crawl itself,
+  // rather than fetching everything and discarding items client-side.
+  if (typeCodenames && typeCodenames.length > 0) {
+    qs.set("system.type[in]", typeCodenames.join(","));
+  }
   const url = `${baseUrl(environmentId, usePreview)}/items-feed?${qs.toString()}`;
 
   let continuationToken: string | null = null;
