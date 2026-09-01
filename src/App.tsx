@@ -43,6 +43,7 @@ function App() {
   const [environmentId, setEnvironmentId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
+  const [includeUnpublished, setIncludeUnpublished] = useState(false);
 
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -69,7 +70,9 @@ function App() {
   );
 
   const abortRef = useRef<AbortController | null>(null);
-  const usePreview = apiKey.trim().length > 0;
+  // Preview mode is an explicit opt-in now, not implied by "a key was given" —
+  // a key may only be there for Secure Access on the published endpoint.
+  const usePreview = includeUnpublished;
 
   function appendLog(message: string) {
     setLog((prev) => [...prev, message]);
@@ -301,7 +304,7 @@ function App() {
         <div className="basis-full flex flex-wrap mb-4">
           <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
             Delivery API key
-            <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission. This tool always requests preview content so it can include unpublished/draft variants in the audit, so the key also needs 'Content preview' permission. Leave blank only if Secure Access is off, in which case only published content is scanned. Kept in memory only, never stored." />
+            <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
           </label>
           <input
             type="password"
@@ -313,6 +316,18 @@ function App() {
             className="basis-full"
           />
         </div>
+
+        <label className="basis-full flex items-center gap-2 mb-3 text-[14px]">
+          <input
+            type="checkbox"
+            checked={includeUnpublished}
+            onChange={(e) => setIncludeUnpublished(e.target.checked)}
+            disabled={isBusy}
+            className="accent-(--purple)"
+          />
+          Include unpublished/draft content
+          <Tooltip text="Off by default: only published content is scanned, matching what's actually live today, and the API key (if any) only needs 'Secure access' permission. Check this to also see in-progress translations that haven't been published yet — the key then needs 'Content preview' permission too." />
+        </label>
 
         <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
           <input
