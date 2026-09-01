@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import "./App.css";
 import { fetchAllContentTypes, fetchAllItemsForLanguage, fetchAllLanguages } from "./kontentApi";
 import type { KontentLanguage, ItemSystem, ItemCoverageRow } from "./types";
@@ -49,6 +50,8 @@ function App() {
   // Per-language progress line, keyed by language codename — languages fetch
   // concurrently, so each needs its own line rather than a shared "last line".
   const [languageProgress, setLanguageProgress] = useState<Map<string, string>>(new Map());
+  // Same idea, for the second pass that double-checks published status.
+  const [publishedProgress, setPublishedProgress] = useState<Map<string, string>>(new Map());
   // The final "Done..." line, kept separate so it always renders after the
   // per-language lines above regardless of when it was appended to `log`.
   const [summary, setSummary] = useState("");
@@ -82,6 +85,7 @@ function App() {
     setErrorMessage("");
     setLog([]);
     setLanguageProgress(new Map());
+    setPublishedProgress(new Map());
     setSummary("");
     setAllRows([]);
     setAllLanguages([]);
@@ -109,42 +113,90 @@ function App() {
         throw new Error("This environment has no languages configured.");
       }
 
-      const itemsByLanguage = new Map<string, Map<string, ItemSystem>>();
-
-      function setProgress(codename: string, message: string) {
-        setLanguageProgress((prev) => new Map(prev).set(codename, message));
-      }
-
       // A small worker pool, not one request-per-language in parallel — that
       // would still respect the rate limit for a handful of languages, but
-      // stays well-behaved as the count grows.
-      let nextIndex = 0;
-      async function worker() {
-        while (nextIndex < langs.length) {
-          const lang = langs[nextIndex++];
-          setProgress(lang.codename, `Fetching content items for "${lang.name}" (${lang.codename})...`);
-          const items = await fetchAllItemsForLanguage(
-            environmentId.trim(),
-            apiKey.trim() || undefined,
-            usePreview,
-            lang.codename,
-            controller.signal,
-            (count) => {
-              setProgress(lang.codename, `Fetching content items for "${lang.name}" (${lang.codename})... ${count} so far`);
-            },
-          );
-          const byCodename = new Map<string, ItemSystem>();
-          for (const item of items) byCodename.set(item.codename, item);
-          itemsByLanguage.set(lang.codename, byCodename);
-          setProgress(lang.codename, `"${lang.name}" (${lang.codename}): ${items.length} item(s).`);
+      // stays well-behaved as the count grows. Used for both the main crawl
+      // and the published-status double-check below.
+      async function crawlLanguages(
+        langsToCrawl: KontentLanguage[],
+        preview: boolean,
+        resultMap: Map<string, Map<string, ItemSystem>>,
+        setProgressMap: Dispatch<SetStateAction<Map<string, string>>>,
+        describeStart: (lang: KontentLanguage) => string,
+        doneNoun: string,
+      ) {
+        function setProgress(codename: string, message: string) {
+          setProgressMap((prev) => new Map(prev).set(codename, message));
         }
+
+        let nextIndex = 0;
+        async function worker() {
+          while (nextIndex < langsToCrawl.length) {
+            const lang = langsToCrawl[nextIndex++];
+            const startMessage = describeStart(lang);
+            setProgress(lang.codename, `${startMessage}...`);
+            const items = await fetchAllItemsForLanguage(
+              environmentId.trim(),
+              apiKey.trim() || undefined,
+              preview,
+              lang.codename,
+              controller.signal,
+              (count) => setProgress(lang.codename, `${startMessage}... ${count} so far`),
+            );
+            const byCodename = new Map<string, ItemSystem>();
+            for (const item of items) byCodename.set(item.codename, item);
+            resultMap.set(lang.codename, byCodename);
+            setProgress(lang.codename, `"${lang.name}" (${lang.codename}): ${items.length} ${doneNoun}.`);
+          }
+        }
+
+        const workerCount = Math.min(LANGUAGE_FETCH_CONCURRENCY, langsToCrawl.length);
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
       }
 
-      const workerCount = Math.min(LANGUAGE_FETCH_CONCURRENCY, langs.length);
-      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      const itemsByLanguage = new Map<string, Map<string, ItemSystem>>();
+      await crawlLanguages(
+        langs,
+        usePreview,
+        itemsByLanguage,
+        setLanguageProgress,
+        (lang) => `Fetching content items for "${lang.name}" (${lang.codename})`,
+        "item(s)",
+      );
 
       // Default language first, so it reads as the reference/source column.
       const orderedLanguages = [defLang, ...langs.filter((l) => l.codename !== defLang.codename)];
+
+      // Kontent.ai lets a variant have a newer, unpublished version sitting on
+      // top of an already-published one — the Preview API only ever returns
+      // the newer version, so a variant whose latest workflow step is e.g.
+      // "draft" might still have an older version that's genuinely live right
+      // now. Only worth checking in preview mode (a non-preview crawl already
+      // only saw published content), and only for languages where at least
+      // one item's latest step isn't already "published" — no point crawling
+      // a language a second time if there's nothing ambiguous to resolve.
+      const publishedItemsByLanguage = new Map<string, Map<string, ItemSystem>>();
+      if (usePreview) {
+        const languagesNeedingCheck = orderedLanguages.filter((lang) => {
+          const byCodename = itemsByLanguage.get(lang.codename);
+          if (!byCodename) return false;
+          for (const item of byCodename.values()) {
+            if ((item.workflow_step ?? "unknown") !== "published") return true;
+          }
+          return false;
+        });
+
+        if (languagesNeedingCheck.length > 0) {
+          await crawlLanguages(
+            languagesNeedingCheck,
+            false,
+            publishedItemsByLanguage,
+            setPublishedProgress,
+            (lang) => `Checking published status for "${lang.name}" (${lang.codename})`,
+            "already-published item(s)",
+          );
+        }
+      }
 
       // Every item codename found in ANY language — not just the default one.
       // An item that only exists in a non-default language (no default-language
@@ -168,7 +220,11 @@ function App() {
         for (const lang of orderedLanguages) {
           const variant = itemsByLanguage.get(lang.codename)?.get(itemCodename);
           if (variant) {
-            languageStatus.set(lang.codename, variant.workflow_step ?? (usePreview ? "unknown" : "published"));
+            let status = variant.workflow_step ?? (usePreview ? "unknown" : "published");
+            if (status !== "published" && publishedItemsByLanguage.get(lang.codename)?.has(itemCodename)) {
+              status = `${status} (also published)`;
+            }
+            languageStatus.set(lang.codename, status);
             if (!representative) representative = variant;
           } else {
             languageStatus.set(lang.codename, MISSING_VARIANT);
@@ -284,7 +340,7 @@ function App() {
         {errorMessage && <ErrorMessage text={errorMessage} />}
       </section>
 
-      {(log.length > 0 || languageProgress.size > 0) && (
+      {(log.length > 0 || languageProgress.size > 0 || publishedProgress.size > 0) && (
         <section className="basis-full bg-(--light-gray) rounded-xl p-4 mb-6 font-mono text-[12px] text-(--lighter-black) max-h-52 overflow-y-auto">
           {log.map((line, i) => (
             <div key={`log-${i}`}>{line}</div>
@@ -292,6 +348,12 @@ function App() {
           {languages.map(
             (lang) =>
               languageProgress.has(lang.codename) && <div key={lang.codename}>{languageProgress.get(lang.codename)}</div>,
+          )}
+          {languages.map(
+            (lang) =>
+              publishedProgress.has(lang.codename) && (
+                <div key={`published-${lang.codename}`}>{publishedProgress.get(lang.codename)}</div>
+              ),
           )}
           {summary && <div>{summary}</div>}
         </section>
