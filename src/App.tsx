@@ -179,12 +179,27 @@ function App() {
     // to the environment mid-crawl (however unlikely).
     const typeFilter = allTypesSelected ? undefined : Array.from(selectedTypeCodenames);
     const typeNameByCodename = new Map(contentTypes.map((t) => [t.codename, t.name]));
+    const slugElementCodenameByType = new Map(contentTypes.map((t) => [t.codename, t.slugElementCodename]));
+
+    // URL slugs are usually per-language, so this only ever reads the
+    // default-language variant's slug rather than pretending to speak for
+    // every language. Only the default language's crawl needs to actually
+    // request the element(s) that hold it — everything else stays on the
+    // zero-payload path.
+    const slugElementCodenames = Array.from(
+      new Set(
+        contentTypes
+          .filter((t) => selectedTypeCodenames.has(t.codename))
+          .map((t) => t.slugElementCodename)
+          .filter((c): c is string => !!c),
+      ),
+    );
 
     try {
       // A small worker pool, not one request-per-language in parallel — that
       // would still respect the rate limit for a handful of languages, but
-      // stays well-behaved as the count grows. Used for both the main crawl
-      // and the published-status double-check below.
+      // stays well-behaved as the count grows. Used for the main crawl, the
+      // published-status double-check below, and the default-language pass.
       async function crawlLanguages(
         langsToCrawl: KontentLanguage[],
         preview: boolean,
@@ -192,6 +207,7 @@ function App() {
         setProgressMap: Dispatch<SetStateAction<Map<string, string>>>,
         describeStart: (lang: KontentLanguage) => string,
         doneNoun: string,
+        elementCodenames?: string[],
       ) {
         function setProgress(codename: string, message: string) {
           setProgressMap((prev) => new Map(prev).set(codename, message));
@@ -211,6 +227,7 @@ function App() {
               controller.signal,
               (count) => setProgress(lang.codename, `${startMessage}... ${count} so far`),
               typeFilter,
+              elementCodenames,
             );
             const byCodename = new Map<string, ItemSystem>();
             for (const item of items) byCodename.set(item.codename, item);
@@ -223,18 +240,25 @@ function App() {
         await Promise.all(Array.from({ length: workerCount }, () => worker()));
       }
 
+      const otherLanguages = languages.filter((l) => l.codename !== defaultLanguage.codename);
       const itemsByLanguage = new Map<string, Map<string, ItemSystem>>();
-      await crawlLanguages(
-        languages,
-        usePreview,
-        itemsByLanguage,
-        setLanguageProgress,
-        (lang) => `Fetching content items for "${lang.name}" (${lang.codename})`,
-        "item(s)",
-      );
+      const describeStart = (lang: KontentLanguage) => `Fetching content items for "${lang.name}" (${lang.codename})`;
+
+      await Promise.all([
+        crawlLanguages(
+          [defaultLanguage],
+          usePreview,
+          itemsByLanguage,
+          setLanguageProgress,
+          describeStart,
+          "item(s)",
+          slugElementCodenames.length > 0 ? slugElementCodenames : undefined,
+        ),
+        crawlLanguages(otherLanguages, usePreview, itemsByLanguage, setLanguageProgress, describeStart, "item(s)"),
+      ]);
 
       // Default language first, so it reads as the reference/source column.
-      const orderedLanguages = [defaultLanguage, ...languages.filter((l) => l.codename !== defaultLanguage.codename)];
+      const orderedLanguages = [defaultLanguage, ...otherLanguages];
 
       // Kontent.ai lets a variant have a newer, unpublished version sitting on
       // top of an already-published one — the Preview API only ever returns
@@ -303,11 +327,20 @@ function App() {
 
         if (!representative) continue;
 
+        // Deliberately from the default-language variant specifically, not
+        // `representative` — a slug is usually per-language, so this should
+        // only ever claim to be the default language's URL, and stay blank
+        // when the item has no default-language variant to read it from.
+        const defaultVariant = itemsByLanguage.get(defaultLanguage.codename)?.get(itemCodename);
+        const slugElementCodename = defaultVariant && slugElementCodenameByType.get(defaultVariant.type);
+        const urlSlug = (slugElementCodename && defaultVariant?.elements?.[slugElementCodename]?.value) || "";
+
         coverageRows.push({
           itemName: representative.name,
           itemCodename,
           contentType: typeNameByCodename.get(representative.type) ?? representative.type,
           collection: representative.collection || "(none)",
+          urlSlug,
           missingLanguageCount,
           languageStatus,
         });

@@ -74,7 +74,17 @@ export async function fetchAllContentTypes(
   while (url) {
     const { data } = await fetchJson(url, apiKey, signal);
     for (const type of data.types ?? []) {
-      result.push({ id: type.system.id, name: type.system.name, codename: type.system.codename });
+      // Find this type's URL slug element, if it has one — lets us later ask
+      // for just that element's value instead of every element.
+      const slugEntry = Object.entries(type.elements ?? {}).find(
+        ([, el]) => (el as { type?: string }).type === "url_slug",
+      );
+      result.push({
+        id: type.system.id,
+        name: type.system.name,
+        codename: type.system.codename,
+        slugElementCodename: slugEntry?.[0],
+      });
     }
     url = data.pagination?.next_page || null;
   }
@@ -100,6 +110,7 @@ export async function fetchAllItemsForLanguage(
   signal: AbortSignal,
   onPage?: (itemsSoFar: number) => void,
   typeCodenames?: string[],
+  elementCodenames?: string[],
 ): Promise<ItemSystem[]> {
   const result: ItemSystem[] = [];
   const qs = new URLSearchParams({
@@ -110,14 +121,20 @@ export async function fetchAllItemsForLanguage(
     // system.language forces the API to return only genuine variants.
     // https://kontent.ai/learn/develop/hello-world/get-localized-content/typescript#a-ignoring-language-fallbacks
     "system.language": languageCodename,
+  });
+  if (elementCodenames && elementCodenames.length > 0) {
+    // Ask for specific elements (e.g. a URL slug) only when a caller actually
+    // needs them — otherwise fall through to the zero-elements trick below.
+    qs.set("elements", elementCodenames.join(","));
+  } else {
     // `elements=` (empty) does NOT restrict anything — the API treats a blank
     // value as "no filter" and still returns every element's full content.
     // Passing a codename that can never match a real element (no content
     // type uses `""` as a codename) makes the API return each item with an
     // empty elements object instead, which is all we need since we only read
     // item.system — this cuts response payloads by ~90% in testing.
-    elements: '""',
-  });
+    qs.set("elements", '""');
+  }
   // Scoping to specific content types up front shrinks the crawl itself,
   // rather than fetching everything and discarding items client-side.
   if (typeCodenames && typeCodenames.length > 0) {
@@ -130,7 +147,7 @@ export async function fetchAllItemsForLanguage(
     const extraHeaders = continuationToken ? { "X-Continuation": continuationToken } : undefined;
     const { data, response } = await fetchJson(url, apiKey, signal, extraHeaders);
     for (const item of data.items ?? []) {
-      result.push(item.system as ItemSystem);
+      result.push({ ...item.system, elements: item.elements } as ItemSystem);
     }
     onPage?.(result.length);
     continuationToken = response.headers.get("X-Continuation");

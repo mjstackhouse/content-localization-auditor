@@ -1,7 +1,13 @@
 import type { ItemCoverageRow, KontentLanguage } from "./types";
 import { MISSING_VARIANT } from "./types";
 
-const FIXED_COLUMNS = ["Content item name", "Content type", "Collection", "Missing language count"] as const;
+const FIXED_COLUMNS = [
+  "Content item name",
+  "Content type",
+  "Collection",
+  "URL slug (default language)",
+  "Missing language count",
+] as const;
 
 function escapeCsvField(value: string): string {
   if (/[",\n]/.test(value)) {
@@ -19,6 +25,7 @@ export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[
       row.itemName,
       row.contentType,
       row.collection,
+      row.urlSlug,
       String(row.missingLanguageCount),
       ...allLanguages.map((l) => row.languageStatus.get(l.codename) ?? MISSING_VARIANT),
     ];
