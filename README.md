@@ -59,7 +59,16 @@ You can also control the delay this tool waits between requests:
 }
 ```
 
-This is the minimum time, in milliseconds, between the start of any two requests this tool makes. It exists because Kontent.ai's Delivery API rate limit is shared with everything else hitting your environment — including your live site's own traffic — not just this tool's own requests. If omitted, it defaults to `150`. Raise it for a busier production environment, or lower it (even to `0`) if you're confident there's little concurrent traffic and want the audit to run faster.
+This is the minimum time, in milliseconds, between the start of any two requests this tool makes. It exists because Kontent.ai's Delivery API rate limit is shared with everything else hitting your environment — including your live site's own traffic — not just this tool's own requests. If omitted, it defaults to `150`.
+
+Rather than guess a number, you can use the same tiers the standalone version's "Retrieval speed" picker offers:
+
+| Standalone label | `requestDelayMs` |
+|---|---|
+| Very cautious — for high-traffic sites | `700` |
+| Cautious — for busier sites | `350` |
+| Normal (recommended, and the default if omitted) | `150` |
+| Fastest — no delay (use with caution) | `0` |
 
 Both settings can be combined in the same configuration object.
 
