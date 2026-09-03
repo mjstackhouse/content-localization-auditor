@@ -42,6 +42,17 @@ function extractRequestDelayMs(appConfig: unknown): number | null {
   return null;
 }
 
+// Same JSON key export-tool uses for this, for consistency across both tools.
+function extractDeliveryKey(appConfig: unknown): string | null {
+  if (appConfig && typeof appConfig === "object" && "deliveryKey" in appConfig) {
+    const value = (appConfig as Record<string, unknown>).deliveryKey;
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
 function Tooltip({ text }: { text: string }) {
   return (
     <span className="tooltip-icon" title={text}>
@@ -91,11 +102,15 @@ function App() {
           if (result.context.environmentId) {
             setEnvironmentId(result.context.environmentId);
           }
+          const deliveryKey = extractDeliveryKey(result.context.appConfig);
+          if (deliveryKey) {
+            setApiKey(deliveryKey);
+          }
         }
       } catch {
         // Not actually embedded, or the SDK couldn't reach the parent frame —
         // fall back to the defaults below, including showing the
-        // environment ID field so the user isn't stuck with no way in.
+        // environment ID and API key fields so the user isn't stuck with no way in.
       } finally {
         setCustomAppContextLoaded(true);
       }
@@ -480,21 +495,23 @@ function App() {
             </div>
           )}
 
-          <div className="basis-full flex flex-wrap mb-4">
-            <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
-              Delivery API key
-              <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
-            </label>
-            <input
-              type="password"
-              id="api-key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Required if your environment has Secure Access enabled"
-              disabled={isConnecting}
-              className="basis-full"
-            />
-          </div>
+          {(!insideKontentAi || (customAppContextLoaded && !apiKey)) && (
+            <div className="basis-full flex flex-wrap mb-4">
+              <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
+                Delivery API key
+                <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
+              </label>
+              <input
+                type="password"
+                id="api-key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Required if your environment has Secure Access enabled"
+                disabled={isConnecting}
+                className="basis-full"
+              />
+            </div>
+          )}
 
           <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
             <input

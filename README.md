@@ -6,7 +6,7 @@ It runs entirely client-side — there's no backend and no data is sent anywhere
 
 ## What it does
 
-1. You provide a Kontent.ai **Environment ID** and, if needed, a **Delivery API key** (skipped automatically when running as a custom app — see below).
+1. You provide a Kontent.ai **Environment ID** and, if needed, a **Delivery API key** — both can be skipped when running as a custom app (see below).
 2. It fetches every language and content type configured in the environment, and detects the environment's actual default language.
 3. You choose which content types to include, and whether to only export items with at least one missing translation.
 4. It crawls every selected content item in every language (via the [Enumerate content items](https://kontent.ai/learn/docs/apis/delivery-api/content-items#enumerate-content-items) endpoint, so results stay consistent even on a large, actively-edited environment).
@@ -33,14 +33,25 @@ The key is kept in memory only for the duration of the session and is never stor
 
 This tool can also be installed as a [custom app](https://kontent.ai/learn/docs/custom-apps) inside Kontent.ai itself (Environment settings → Custom apps), pointed at wherever you've deployed it. Running this way changes a couple of things:
 
-- The **Environment ID** is detected automatically from the custom app context, so that field doesn't appear at all — you'll only be asked for a Delivery API key, if one is needed.
+- The **Environment ID** is detected automatically from the custom app context, so that field doesn't appear at all.
 - The **Advanced settings** speed picker shown in standalone mode is hidden in favor of a value read from the custom app's own configuration (see below) — a setting an admin sets once, rather than something every person running an audit needs to understand.
+- If you add a Delivery API key to the configuration (see below), the **Delivery API key** field doesn't appear either — otherwise it works the same as standalone mode.
 
 ### Configuring the Custom App
 
 This custom app requires no JSON parameters, so the parameters field can be left empty.
 
-But if you'd like to control the delay this tool waits between requests, you can do that like so:
+But, if you'd like to add your Delivery API key to the configuration so users don't have to enter it every time, you can do that like so:
+
+```json
+{
+  "deliveryKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."
+}
+```
+
+The key needs 'Secure access' permission if your environment has Secure Access enabled, and 'Content preview' permission if you also want users to be able to check "Include unpublished/draft content." Adding the key to your configuration will technically expose it to any roles allowed to use the custom app (if they go looking for it), so this is ultimately up to whoever configures the custom app — the same tradeoff as in the [export tool](https://github.com/mjstackhouse/export-tool#configuring-the-custom-app), which uses the same `deliveryKey` config name for consistency.
+
+You can also control the delay this tool waits between requests:
 
 ```json
 {
@@ -49,6 +60,8 @@ But if you'd like to control the delay this tool waits between requests, you can
 ```
 
 This is the minimum time, in milliseconds, between the start of any two requests this tool makes. It exists because Kontent.ai's Delivery API rate limit is shared with everything else hitting your environment — including your live site's own traffic — not just this tool's own crawl. If omitted, it defaults to `150`. Raise it for a busier production environment, or lower it (even to `0`) if you're confident there's little concurrent traffic and want the audit to run faster.
+
+Both settings can be combined in the same configuration object.
 
 ## Deploying
 
