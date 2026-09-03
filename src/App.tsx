@@ -647,7 +647,7 @@ function App() {
             </label>
           </div>
 
-          <div className="basis-full flex justify-between gap-3">
+          <div className="basis-full flex justify-between gap-3 mt-6">
             {isRunning ? (
               <button onClick={handleCancel} className="btn back-btn">
                 Cancel
