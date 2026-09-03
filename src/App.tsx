@@ -513,7 +513,7 @@ function App() {
             </div>
           )}
 
-          <label className="basis-full flex items-center gap-2 mb-6 text-[14px]">
+          <label className="input-container basis-full flex items-center gap-2 mb-6 text-[14px]">
             <input
               type="checkbox"
               checked={includeUnpublished}
@@ -623,7 +623,7 @@ function App() {
 
           <div className="basis-full border-t border-(--dark-gray) pt-6 mb-6">
             <p className="section-heading mb-3">Export options</p>
-            <label className="basis-full flex items-center gap-2 mb-3 text-[14px]">
+            <label className="input-container basis-full flex items-center gap-2 mb-3 text-[14px]">
               <input
                 type="checkbox"
                 checked={onlyIncomplete}
@@ -634,7 +634,7 @@ function App() {
               Only export items with at least one missing translation
             </label>
 
-            <label className="basis-full flex items-center gap-2 text-[14px]">
+            <label className="input-container basis-full flex items-center gap-2 text-[14px]">
               <input
                 type="checkbox"
                 checked={includeUrlSlug}
