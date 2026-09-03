@@ -53,6 +53,14 @@ function extractDeliveryKey(appConfig: unknown): string | null {
   return null;
 }
 
+// YYYY-MM-DD, local date — same format export-tool uses for its export filenames.
+function formatDateStamp(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function Tooltip({ text }: { text: string }) {
   return (
     <span className="tooltip-icon" title={text}>
@@ -149,6 +157,10 @@ function App() {
   // crawl time, since toggling the live checkbox afterward without
   // re-running the export wouldn't change what's actually in memory.
   const [rowsHaveUrlSlug, setRowsHaveUrlSlug] = useState(false);
+  // When this run's crawl finished — reused for every download of this
+  // report's data, so re-clicking "Download CSV" later doesn't silently
+  // shift the filename's date away from when the data was actually captured.
+  const [exportTimestamp, setExportTimestamp] = useState("");
 
   const displayedRows = useMemo(
     () => (onlyIncomplete ? allRows.filter((r) => r.missingLanguageCount > 0) : allRows),
@@ -223,6 +235,7 @@ function App() {
     setAllRows([]);
     setAllLanguages([]);
     setRowsHaveUrlSlug(false);
+    setExportTimestamp("");
   }
 
   function toggleType(codename: string) {
@@ -435,9 +448,11 @@ function App() {
       coverageRows.sort((a, b) => a.itemName.localeCompare(b.itemName));
 
       const incompleteCount = coverageRows.filter((r) => r.missingLanguageCount > 0).length;
+      const timestamp = formatDateStamp(new Date());
       setAllLanguages(orderedLanguages);
       setAllRows(coverageRows);
       setRowsHaveUrlSlug(includeUrlSlug);
+      setExportTimestamp(timestamp);
       setSummary(`Done. Found ${coverageRows.length} item(s) total, ${incompleteCount} with at least one missing translation.`);
       setStage("done");
 
@@ -446,7 +461,12 @@ function App() {
       // result of a click, and this fires well after the one that started
       // the export) and a way to re-export after toggling the checkbox.
       const rowsToExport = onlyIncomplete ? coverageRows.filter((r) => r.missingLanguageCount > 0) : coverageRows;
-      downloadCsv(rowsToExport, orderedLanguages, includeUrlSlug, `localization-audit-${environmentId.trim()}.csv`);
+      downloadCsv(
+        rowsToExport,
+        orderedLanguages,
+        includeUrlSlug,
+        `localization-audit-${environmentId.trim()}-${timestamp}.csv`,
+      );
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setStage("error");
@@ -697,7 +717,12 @@ function App() {
             <h2 className="section-heading">{displayedRows.length} of {allRows.length} item(s) exported</h2>
             <button
               onClick={() =>
-                downloadCsv(displayedRows, allLanguages, rowsHaveUrlSlug, `localization-audit-${environmentId}.csv`)
+                downloadCsv(
+                  displayedRows,
+                  allLanguages,
+                  rowsHaveUrlSlug,
+                  `localization-audit-${environmentId}-${exportTimestamp}.csv`,
+                )
               }
               disabled={displayedRows.length === 0}
               className="btn continue-btn"
