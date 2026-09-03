@@ -9,9 +9,9 @@ It runs entirely client-side — there's no backend and no data is sent anywhere
 1. You provide a Kontent.ai **Environment ID** and, if needed, a **Delivery API key** — both can be skipped when running as a custom app (see below).
 2. It fetches every language and content type configured in the environment, and detects the environment's actual default language.
 3. You choose which content types to include, and whether to only export items with at least one missing translation.
-4. It crawls every selected content item in every language (via the [Enumerate content items](https://kontent.ai/learn/docs/apis/delivery-api/content-items#enumerate-content-items) endpoint, so results stay consistent even on a large, actively-edited environment).
+4. It retrieves every selected content item in every language (via the [Enumerate content items](https://kontent.ai/learn/docs/apis/delivery-api/content-items#enumerate-content-items) endpoint, so results stay consistent even on a large, actively-edited environment).
 5. For every item found in *any* language, it builds one row showing that item's status — the actual workflow step (`published`, `draft`, etc.) or `Missing` — in every language.
-6. It exports the result as a CSV, downloaded automatically when the crawl finishes.
+6. It exports the result as a CSV, downloaded automatically once it's finished.
 
 ## Do you need a Delivery API key?
 
@@ -59,7 +59,7 @@ You can also control the delay this tool waits between requests:
 }
 ```
 
-This is the minimum time, in milliseconds, between the start of any two requests this tool makes. It exists because Kontent.ai's Delivery API rate limit is shared with everything else hitting your environment — including your live site's own traffic — not just this tool's own crawl. If omitted, it defaults to `150`. Raise it for a busier production environment, or lower it (even to `0`) if you're confident there's little concurrent traffic and want the audit to run faster.
+This is the minimum time, in milliseconds, between the start of any two requests this tool makes. It exists because Kontent.ai's Delivery API rate limit is shared with everything else hitting your environment — including your live site's own traffic — not just this tool's own requests. If omitted, it defaults to `150`. Raise it for a busier production environment, or lower it (even to `0`) if you're confident there's little concurrent traffic and want the audit to run faster.
 
 Both settings can be combined in the same configuration object.
 
