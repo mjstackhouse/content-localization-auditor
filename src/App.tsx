@@ -499,7 +499,7 @@ function App() {
             <div className="basis-full flex flex-wrap mb-4">
               <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
                 Delivery API key
-                <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished/draft content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
+                <Tooltip text="Required if your environment has Secure Access enabled (Environment settings → API keys) — the key needs 'Secure access' permission for that. If you also check 'Include unpublished content' below, the key additionally needs 'Content preview' permission. Leave blank only if Secure Access is off. Kept in memory only, never stored." />
               </label>
               <input
                 type="password"
@@ -521,7 +521,7 @@ function App() {
               disabled={isConnecting}
               className="accent-(--purple)"
             />
-            Include unpublished/draft content
+            Include unpublished content
             <Tooltip text="Off by default: only published content is scanned, matching what's actually live today, and the API key (if any) only needs 'Secure access' permission. Check this to also see in-progress translations that haven't been published yet — the key then needs 'Content preview' permission too." />
           </label>
 

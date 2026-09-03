@@ -19,7 +19,7 @@ Leave it blank if your environment does **not** have [Secure Access](https://kon
 
 If Secure Access **is** enabled (common for most Kontent.ai customers), a key is required, with **Secure access** permission enabled on it.
 
-By default, this tool only scans **published** content — matching what's actually live today, and keeping the key's permission requirements minimal. Check "Include unpublished/draft content" if you also want to see in-progress translations that haven't been published yet; the key then additionally needs **Content preview** permission.
+By default, this tool only scans **published** content — matching what's actually live today, and keeping the key's permission requirements minimal. Check "Include unpublished content" if you also want to see in-progress translations that haven't been published yet; the key then additionally needs **Content preview** permission.
 
 The key is kept in memory only for the duration of the session and is never stored, logged, or sent anywhere other than Kontent.ai's own API.
 
@@ -49,7 +49,7 @@ But, if you'd like to add your Delivery API key to the configuration so users do
 }
 ```
 
-The key needs 'Secure access' permission if your environment has Secure Access enabled, and 'Content preview' permission if you also want users to be able to check "Include unpublished/draft content." Adding the key to your configuration will technically expose it to any roles allowed to use the custom app (if they go looking for it), so this is ultimately up to whoever configures the custom app — the same tradeoff as in the [export tool](https://github.com/mjstackhouse/export-tool#configuring-the-custom-app), which uses the same `deliveryKey` config name for consistency.
+The key needs 'Secure access' permission if your environment has Secure Access enabled, and 'Content preview' permission if you also want users to be able to check "Include unpublished content." Adding the key to your configuration will technically expose it to any roles allowed to use the custom app (if they go looking for it), so this is ultimately up to whoever configures the custom app — the same tradeoff as in the [export tool](https://github.com/mjstackhouse/export-tool#configuring-the-custom-app), which uses the same `deliveryKey` config name for consistency.
 
 You can also control the delay this tool waits between requests:
 
