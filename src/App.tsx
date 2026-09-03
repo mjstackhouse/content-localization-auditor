@@ -668,21 +668,26 @@ function App() {
       )}
 
       {(log.length > 0 || languageProgress.size > 0 || publishedProgress.size > 0) && (
-        <section className="basis-full bg-(--light-gray) rounded-xl p-4 mb-6 font-mono text-[12px] text-(--lighter-black) max-h-52 overflow-y-auto">
-          {log.map((line, i) => (
-            <div key={`log-${i}`}>{line}</div>
-          ))}
-          {languages.map(
-            (lang) =>
-              languageProgress.has(lang.codename) && <div key={lang.codename}>{languageProgress.get(lang.codename)}</div>,
-          )}
-          {languages.map(
-            (lang) =>
-              publishedProgress.has(lang.codename) && (
-                <div key={`published-${lang.codename}`}>{publishedProgress.get(lang.codename)}</div>
-              ),
-          )}
-          {summary && <div>{summary}</div>}
+        <section className="basis-full bg-(--light-gray) rounded-xl p-4 mb-6">
+          <p className="section-heading mb-2">Progress log</p>
+          <div className="font-mono text-[12px] text-(--lighter-black) max-h-52 overflow-y-auto">
+            {log.map((line, i) => (
+              <div key={`log-${i}`}>{line}</div>
+            ))}
+            {languages.map(
+              (lang) =>
+                languageProgress.has(lang.codename) && (
+                  <div key={lang.codename}>{languageProgress.get(lang.codename)}</div>
+                ),
+            )}
+            {languages.map(
+              (lang) =>
+                publishedProgress.has(lang.codename) && (
+                  <div key={`published-${lang.codename}`}>{publishedProgress.get(lang.codename)}</div>
+                ),
+            )}
+            {summary && <div>{summary}</div>}
+          </div>
         </section>
       )}
 
