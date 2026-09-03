@@ -2,6 +2,31 @@ import type { KontentLanguage, KontentContentType, ItemSystem } from "./types";
 
 export class KontentApiError extends Error {}
 
+// Kontent's Delivery API rate limit (100 req/sec, ~33 req/sec sustained) is
+// shared across everything hitting the environment — this tool's own crawl
+// isn't the only traffic. This is a floor on the time between the START of
+// any two requests, enforced globally across every concurrent language
+// worker, so raising crawl concurrency never raises how fast requests
+// actually go out — it only hides network latency, which is the point.
+let requestDelayMs = 150;
+let nextAvailableSlotAt = 0;
+
+export function setRequestDelayMs(ms: number): void {
+  requestDelayMs = Math.max(0, ms);
+}
+
+async function throttle(): Promise<void> {
+  const now = Date.now();
+  const scheduledAt = Math.max(now, nextAvailableSlotAt);
+  // Reserve the slot synchronously (no `await` yet) so concurrent callers
+  // queue up correctly instead of racing on a stale nextAvailableSlotAt.
+  nextAvailableSlotAt = scheduledAt + requestDelayMs;
+  const waitMs = scheduledAt - now;
+  if (waitMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+}
+
 function baseUrl(environmentId: string, usePreview: boolean): string {
   const host = usePreview ? "preview-deliver.kontent.ai" : "deliver.kontent.ai";
   return `https://${host}/${environmentId}`;
@@ -17,6 +42,7 @@ async function fetchJson(
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
   for (let attempt = 0; attempt < 6; attempt++) {
+    await throttle();
     const res = await fetch(url, { headers, signal });
 
     if (res.status === 429) {

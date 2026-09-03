@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import "./App.css";
-import { fetchAllContentTypes, fetchAllItemsForLanguage, fetchAllLanguages } from "./kontentApi";
+import { fetchAllContentTypes, fetchAllItemsForLanguage, fetchAllLanguages, setRequestDelayMs } from "./kontentApi";
 import type { KontentLanguage, KontentContentType, ItemSystem, ItemCoverageRow } from "./types";
 import { MISSING_VARIANT } from "./types";
 import { downloadCsv } from "./csv";
@@ -17,6 +17,30 @@ const DEFAULT_LANGUAGE_ID = "00000000-0000-0000-0000-000000000000";
 // not request count, so this is a straightforward win for environments
 // with many languages.
 const LANGUAGE_FETCH_CONCURRENCY = 5;
+
+// Named presets rather than a raw millisecond input — most users of this
+// tool won't know what to set a delay to, or why one matters at all. When
+// embedded as a custom app, this is skipped entirely in favor of a
+// requestDelayMs value in the app's JSON config, set once by whoever
+// installs it rather than by every person who runs an audit.
+const CRAWL_SPEED_PRESETS = {
+  normal: { label: "Normal (recommended)", delayMs: 150 },
+  cautious: { label: "Cautious — for busier sites", delayMs: 350 },
+  veryCautious: { label: "Very cautious — for high-traffic sites", delayMs: 700 },
+  fastest: { label: "Fastest — no delay (use with caution)", delayMs: 0 },
+} as const;
+type CrawlSpeedKey = keyof typeof CRAWL_SPEED_PRESETS;
+const DEFAULT_CRAWL_SPEED: CrawlSpeedKey = "normal";
+
+function extractRequestDelayMs(appConfig: unknown): number | null {
+  if (appConfig && typeof appConfig === "object" && "requestDelayMs" in appConfig) {
+    const value = (appConfig as Record<string, unknown>).requestDelayMs;
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+  }
+  return null;
+}
 
 function Tooltip({ text }: { text: string }) {
   return (
@@ -45,6 +69,32 @@ function App() {
   const [includeUnpublished, setIncludeUnpublished] = useState(false);
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
   const [includeUrlSlug, setIncludeUrlSlug] = useState(false);
+  const [crawlSpeed, setCrawlSpeed] = useState<CrawlSpeedKey>(DEFAULT_CRAWL_SPEED);
+
+  // Custom apps run inside an iframe within app.kontent.ai; a standalone tab
+  // is always its own top-level window.
+  const [insideKontentAi] = useState(() => typeof window !== "undefined" && window.self !== window.top);
+  const [customAppRequestDelayMs, setCustomAppRequestDelayMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!insideKontentAi) return;
+    (async () => {
+      try {
+        const { getCustomAppContext } = await import("@kontent-ai/custom-app-sdk");
+        const result = await getCustomAppContext();
+        if (!result.isError) {
+          setCustomAppRequestDelayMs(extractRequestDelayMs(result.context.appConfig));
+        }
+      } catch {
+        // Not actually embedded, or the SDK couldn't reach the parent frame —
+        // fall back to the default delay below.
+      }
+    })();
+  }, [insideKontentAi]);
+
+  const effectiveRequestDelayMs = insideKontentAi
+    ? (customAppRequestDelayMs ?? CRAWL_SPEED_PRESETS[DEFAULT_CRAWL_SPEED].delayMs)
+    : CRAWL_SPEED_PRESETS[crawlSpeed].delayMs;
 
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -99,6 +149,7 @@ function App() {
     setStage("connecting");
     setErrorMessage("");
     setLog([]);
+    setRequestDelayMs(effectiveRequestDelayMs);
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -177,6 +228,7 @@ function App() {
     setSummary("");
     setAllRows([]);
     setAllLanguages([]);
+    setRequestDelayMs(effectiveRequestDelayMs);
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -439,6 +491,38 @@ function App() {
             Include unpublished/draft content
             <Tooltip text="Off by default: only published content is scanned, matching what's actually live today, and the API key (if any) only needs 'Secure access' permission. Check this to also see in-progress translations that haven't been published yet — the key then needs 'Content preview' permission too." />
           </label>
+
+          {!insideKontentAi && (
+            <fieldset className="basis-full flex flex-wrap mb-6">
+              <details className="basis-full flex flex-wrap">
+                <summary className="basis-full">
+                  <div className="relative">
+                    <legend className="section-heading">Advanced settings</legend>
+                  </div>
+                </summary>
+
+                <div className="basis-full flex flex-wrap pl-10">
+                  <label htmlFor="crawl-speed" className="basis-full text-left mb-2 font-bold">
+                    Crawl speed
+                    <Tooltip text="This tool shares your environment's Delivery API rate limit with everything else hitting it, like your live website's own visitors. Slower settings leave more of that shared limit available for real traffic." />
+                  </label>
+                  <select
+                    id="crawl-speed"
+                    value={crawlSpeed}
+                    onChange={(e) => setCrawlSpeed(e.target.value as CrawlSpeedKey)}
+                    disabled={isConnecting}
+                    className="basis-full"
+                  >
+                    {Object.entries(CRAWL_SPEED_PRESETS).map(([key, preset]) => (
+                      <option key={key} value={key}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </details>
+            </fieldset>
+          )}
 
           <div className="basis-full flex justify-end gap-3">
             {isConnecting && (
