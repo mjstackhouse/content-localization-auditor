@@ -75,6 +75,10 @@ function App() {
   // is always its own top-level window.
   const [insideKontentAi] = useState(() => typeof window !== "undefined" && window.self !== window.top);
   const [customAppRequestDelayMs, setCustomAppRequestDelayMs] = useState<number | null>(null);
+  // Gates step 1 while the (async, postMessage-based) context fetch is in
+  // flight — there's nothing to wait for outside Kontent.ai, so this starts
+  // true in that case.
+  const [customAppContextLoaded, setCustomAppContextLoaded] = useState(!insideKontentAi);
 
   useEffect(() => {
     if (!insideKontentAi) return;
@@ -84,10 +88,16 @@ function App() {
         const result = await getCustomAppContext();
         if (!result.isError) {
           setCustomAppRequestDelayMs(extractRequestDelayMs(result.context.appConfig));
+          if (result.context.environmentId) {
+            setEnvironmentId(result.context.environmentId);
+          }
         }
       } catch {
         // Not actually embedded, or the SDK couldn't reach the parent frame —
-        // fall back to the default delay below.
+        // fall back to the defaults below, including showing the
+        // environment ID field so the user isn't stuck with no way in.
+      } finally {
+        setCustomAppContextLoaded(true);
       }
     })();
   }, [insideKontentAi]);
@@ -448,21 +458,27 @@ function App() {
 
       {(stage === "idle" || stage === "connecting" || (stage === "error" && !hasConnected)) && (
         <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
-          <div className="basis-full flex flex-wrap mb-6">
-            <label htmlFor="environment-id" className="basis-full text-left mb-2 font-bold">
-              Environment ID
-              <Tooltip text="Found under Environment settings, or in the app.kontent.ai/<environment-id> URL." />
-            </label>
-            <input
-              type="text"
-              id="environment-id"
-              value={environmentId}
-              onChange={(e) => setEnvironmentId(e.target.value)}
-              placeholder="e.g. 975bf280-fd91-488c-994c-2f04416e5ee3"
-              disabled={isConnecting}
-              className="basis-full"
-            />
-          </div>
+          {insideKontentAi && !customAppContextLoaded && (
+            <p className="basis-full text-[14px] text-(--color-gray-500) mb-6">Loading environment info...</p>
+          )}
+
+          {(!insideKontentAi || (customAppContextLoaded && !environmentId)) && (
+            <div className="basis-full flex flex-wrap mb-6">
+              <label htmlFor="environment-id" className="basis-full text-left mb-2 font-bold">
+                Environment ID
+                <Tooltip text="Found under Environment settings, or in the app.kontent.ai/<environment-id> URL." />
+              </label>
+              <input
+                type="text"
+                id="environment-id"
+                value={environmentId}
+                onChange={(e) => setEnvironmentId(e.target.value)}
+                placeholder="e.g. 975bf280-fd91-488c-994c-2f04416e5ee3"
+                disabled={isConnecting}
+                className="basis-full"
+              />
+            </div>
+          )}
 
           <div className="basis-full flex flex-wrap mb-4">
             <label htmlFor="api-key" className="basis-full text-left mb-2 font-bold">
@@ -530,7 +546,11 @@ function App() {
                 Cancel
               </button>
             )}
-            <button onClick={handleConnect} disabled={isConnecting} className="btn continue-btn inline-flex items-center">
+            <button
+              onClick={handleConnect}
+              disabled={isConnecting || !customAppContextLoaded}
+              className="btn continue-btn inline-flex items-center"
+            >
               {isConnecting && <span className="loading-span" />}
               {isConnecting ? "Connecting..." : "Continue"}
             </button>
