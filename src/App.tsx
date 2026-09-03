@@ -23,14 +23,17 @@ const LANGUAGE_FETCH_CONCURRENCY = 5;
 // embedded as a custom app, this is skipped entirely in favor of a
 // requestDelayMs value in the app's JSON config, set once by whoever
 // installs it rather than by every person who runs an audit.
-const CRAWL_SPEED_PRESETS = {
-  normal: { label: "Normal (recommended)", delayMs: 150 },
-  cautious: { label: "Cautious — for busier sites", delayMs: 350 },
+// Ordered slowest/safest to fastest/riskiest — a plain spectrum, independent
+// of which one is actually selected by default (a <select> always displays
+// its selected option regardless of list position).
+const RETRIEVAL_SPEED_PRESETS = {
   veryCautious: { label: "Very cautious — for high-traffic sites", delayMs: 700 },
+  cautious: { label: "Cautious — for busier sites", delayMs: 350 },
+  normal: { label: "Normal (recommended)", delayMs: 150 },
   fastest: { label: "Fastest — no delay (use with caution)", delayMs: 0 },
 } as const;
-type CrawlSpeedKey = keyof typeof CRAWL_SPEED_PRESETS;
-const DEFAULT_CRAWL_SPEED: CrawlSpeedKey = "normal";
+type RetrievalSpeedKey = keyof typeof RETRIEVAL_SPEED_PRESETS;
+const DEFAULT_RETRIEVAL_SPEED: RetrievalSpeedKey = "normal";
 
 function extractRequestDelayMs(appConfig: unknown): number | null {
   if (appConfig && typeof appConfig === "object" && "requestDelayMs" in appConfig) {
@@ -88,7 +91,7 @@ function App() {
   const [includeUnpublished, setIncludeUnpublished] = useState(false);
   const [onlyIncomplete, setOnlyIncomplete] = useState(true);
   const [includeUrlSlug, setIncludeUrlSlug] = useState(false);
-  const [crawlSpeed, setCrawlSpeed] = useState<CrawlSpeedKey>(DEFAULT_CRAWL_SPEED);
+  const [retrievalSpeed, setRetrievalSpeed] = useState<RetrievalSpeedKey>(DEFAULT_RETRIEVAL_SPEED);
 
   // Custom apps run inside an iframe within app.kontent.ai; a standalone tab
   // is always its own top-level window.
@@ -126,8 +129,8 @@ function App() {
   }, [insideKontentAi]);
 
   const effectiveRequestDelayMs = insideKontentAi
-    ? (customAppRequestDelayMs ?? CRAWL_SPEED_PRESETS[DEFAULT_CRAWL_SPEED].delayMs)
-    : CRAWL_SPEED_PRESETS[crawlSpeed].delayMs;
+    ? (customAppRequestDelayMs ?? RETRIEVAL_SPEED_PRESETS[DEFAULT_RETRIEVAL_SPEED].delayMs)
+    : RETRIEVAL_SPEED_PRESETS[retrievalSpeed].delayMs;
 
   const [stage, setStage] = useState<Stage>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -555,18 +558,18 @@ function App() {
                 </summary>
 
                 <div className="basis-full flex flex-wrap pl-10">
-                  <label htmlFor="crawl-speed" className="basis-full text-left mb-2 font-bold">
-                    Crawl speed
+                  <label htmlFor="retrieval-speed" className="basis-full text-left mb-2 font-bold">
+                    Retrieval speed
                     <Tooltip text="This tool shares your environment's Delivery API rate limit with everything else hitting it, like your live website's own visitors. Slower settings leave more of that shared limit available for real traffic." />
                   </label>
                   <select
-                    id="crawl-speed"
-                    value={crawlSpeed}
-                    onChange={(e) => setCrawlSpeed(e.target.value as CrawlSpeedKey)}
+                    id="retrieval-speed"
+                    value={retrievalSpeed}
+                    onChange={(e) => setRetrievalSpeed(e.target.value as RetrievalSpeedKey)}
                     disabled={isConnecting}
                     className="basis-full"
                   >
-                    {Object.entries(CRAWL_SPEED_PRESETS).map(([key, preset]) => (
+                    {Object.entries(RETRIEVAL_SPEED_PRESETS).map(([key, preset]) => (
                       <option key={key} value={key}>
                         {preset.label}
                       </option>
