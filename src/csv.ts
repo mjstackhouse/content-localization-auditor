@@ -12,11 +12,13 @@ function escapeCsvField(value: string): string {
 }
 
 export function buildCsv(rows: ItemCoverageRow[], allLanguages: KontentLanguage[], includeUrlSlug: boolean): string {
+  // allLanguages is always built default-language-first (see App.tsx), so
+  // index 0 is the one to mark — matching how Kontent.ai's own UI labels it.
   const header = [
     ...FIXED_COLUMNS.slice(0, 3),
     ...(includeUrlSlug ? [URL_SLUG_COLUMN] : []),
     ...FIXED_COLUMNS.slice(3),
-    ...allLanguages.map((l) => l.name),
+    ...allLanguages.map((l, i) => (i === 0 ? `${l.name} (Default)` : l.name)),
   ];
   const lines = [header.map(escapeCsvField).join(",")];
 
