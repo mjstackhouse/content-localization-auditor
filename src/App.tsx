@@ -34,13 +34,25 @@ const LANGUAGE_FETCH_CONCURRENCY = 5;
 // of which one is actually selected by default (a <select> always displays
 // its selected option regardless of list position).
 const RETRIEVAL_SPEED_PRESETS = {
-  veryCautious: { label: "Very cautious — for high-traffic sites", delayMs: 700 },
-  cautious: { label: "Cautious — for busier sites", delayMs: 350 },
-  normal: { label: "Normal (recommended)", delayMs: 150 },
-  fastest: { label: "Fastest — no delay (use with caution)", delayMs: 0 },
+  veryCautious: { label: "Very cautious — for high-traffic sites", shortLabel: "Very cautious", delayMs: 700 },
+  cautious: { label: "Cautious — for busier sites", shortLabel: "Cautious", delayMs: 350 },
+  normal: { label: "Normal (recommended)", shortLabel: "Normal", delayMs: 150 },
+  fastest: { label: "Fastest — no delay (use with caution)", shortLabel: "Fastest", delayMs: 0 },
 } as const;
 type RetrievalSpeedKey = keyof typeof RETRIEVAL_SPEED_PRESETS;
 const DEFAULT_RETRIEVAL_SPEED: RetrievalSpeedKey = "normal";
+
+// Used once step 1's own controls are out of view, so the choice that was
+// made — and its session-wide effect — isn't just forgotten past that point.
+// Matches against delayMs rather than trusting insideKontentAi/retrievalSpeed
+// directly, so it reads correctly regardless of which one actually produced
+// the effective value.
+function describeRetrievalSpeed(delayMs: number): string {
+  const matchingKey = (Object.keys(RETRIEVAL_SPEED_PRESETS) as RetrievalSpeedKey[]).find(
+    (key) => RETRIEVAL_SPEED_PRESETS[key].delayMs === delayMs,
+  );
+  return matchingKey ? RETRIEVAL_SPEED_PRESETS[matchingKey].shortLabel : `${delayMs}ms`;
+}
 
 function extractRequestDelayMs(appConfig: unknown): number | null {
   if (appConfig && typeof appConfig === "object" && "requestDelayMs" in appConfig) {
@@ -182,6 +194,7 @@ function App() {
   // key may only be there for Secure Access on the published endpoint.
   const usePreview = includeUnpublished;
   const allTypesSelected = contentTypes.length > 0 && selectedTypeCodenames.size === contentTypes.length;
+  const retrievalSpeedSummary = describeRetrievalSpeed(effectiveRequestDelayMs);
 
   function appendLog(message: string) {
     setLog((prev) => [...prev, message]);
@@ -489,6 +502,7 @@ function App() {
 
   const isConnecting = stage === "connecting";
   const isRunning = stage === "running";
+  const showStepOne = stage === "idle" || stage === "connecting" || (stage === "error" && !hasConnected);
 
   return (
     <div className="max-w-5xl mx-auto flex flex-wrap">
@@ -496,12 +510,14 @@ function App() {
         Content Localization Auditor
       </p>
 
-      <p className="basis-full text-[14px] text-(--color-gray-500) mb-8">
-        Audit content localization coverage across every language in your environment, and find
-        content that's missing variants.
-      </p>
+      {showStepOne && (
+        <p className="basis-full text-[14px] text-(--color-gray-500) mb-8">
+          Audit content localization coverage across every language in your environment, and find
+          content that's missing variants.
+        </p>
+      )}
 
-      {(stage === "idle" || stage === "connecting" || (stage === "error" && !hasConnected)) && (
+      {showStepOne && (
         <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
           {insideKontentAi && !customAppContextLoaded && (
             <p className="basis-full text-[14px] text-(--color-gray-500) mb-6">Loading environment info...</p>
@@ -609,6 +625,16 @@ function App() {
 
       {(stage === "ready" || stage === "running" || stage === "done" || (stage === "error" && hasConnected)) && (
         <section className="basis-full rounded-2xl border border-(--dark-gray) bg-white p-6 mb-6">
+          <div className="basis-full flex flex-col gap-1 mb-6 pb-4 border-b border-(--dark-gray) text-[13px] text-(--color-gray-500)">
+            <p>
+              <span className="font-bold">Unpublished content:</span>{" "}
+              {includeUnpublished ? "Included" : "Not included"}
+            </p>
+            <p>
+              <span className="font-bold">Retrieval speed:</span> {retrievalSpeedSummary}
+            </p>
+          </div>
+
           <fieldset className="basis-full flex flex-wrap mb-6">
             <details className="basis-full flex flex-wrap" open>
               <summary className="basis-full">
@@ -677,7 +703,7 @@ function App() {
             </label>
           </div>
 
-          <div className="basis-full flex justify-between gap-3 mt-6">
+          <div className="basis-full flex justify-between gap-3 mt-10">
             {isRunning ? (
               <button onClick={handleCancel} className="btn back-btn">
                 Cancel
