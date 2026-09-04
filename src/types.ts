@@ -19,8 +19,8 @@ export interface ItemSystem {
   type: string;
   collection: string;
   language: string;
-  last_modified: string;
-  workflow_step?: string;
+  lastModified: string;
+  workflowStep?: string;
   workflow?: string;
   /** Present only when explicitly requested via fetchAllItemsForLanguage's elementCodenames param. */
   elements?: Record<string, { value?: string }>;

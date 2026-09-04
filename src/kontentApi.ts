@@ -1,3 +1,6 @@
+import { HttpService } from "@kontent-ai/core-sdk";
+import type { IHttpGetQueryCall, IHttpQueryOptions, IHttpCancelRequestToken, IResponse } from "@kontent-ai/core-sdk";
+import { DeliveryClient } from "@kontent-ai/delivery-sdk";
 import type { KontentLanguage, KontentContentType, ItemSystem } from "./types";
 
 export class KontentApiError extends Error {}
@@ -6,8 +9,9 @@ export class KontentApiError extends Error {}
 // shared across everything hitting the environment — this tool's own crawl
 // isn't the only traffic. This is a floor on the time between the START of
 // any two requests, enforced globally across every concurrent language
-// worker, so raising crawl concurrency never raises how fast requests
-// actually go out — it only hides network latency, which is the point.
+// worker (and both the SDK's own internal pagination requests), so raising
+// crawl concurrency never raises how fast requests actually go out — it only
+// hides network latency, which is the point.
 let requestDelayMs = 150;
 let nextAvailableSlotAt = 0;
 
@@ -27,95 +31,88 @@ async function throttle(): Promise<void> {
   }
 }
 
-function baseUrl(environmentId: string, usePreview: boolean): string {
-  const host = usePreview ? "preview-deliver.kontent.ai" : "deliver.kontent.ai";
-  return `https://${host}/${environmentId}`;
+// The SDK's own HTTP layer only retries reactively on 429/5xx — it has no
+// proactive rate limiting. This is the documented extension point
+// (IDeliveryClientConfig.httpService) for adding that, so every request the
+// SDK makes, from any query, funnels through the same throttle above.
+class ThrottledHttpService extends HttpService {
+  override async getAsync<TRawData>(
+    call: IHttpGetQueryCall,
+    options?: IHttpQueryOptions<any>,
+  ): Promise<IResponse<TRawData>> {
+    await throttle();
+    return super.getAsync<TRawData>(call, options);
+  }
 }
 
-async function fetchJson(
-  url: string,
-  apiKey: string | undefined,
-  signal: AbortSignal,
-  extraHeaders?: Record<string, string>,
-): Promise<{ data: any; response: Response }> {
-  const headers: Record<string, string> = { ...extraHeaders };
-  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+// Mints a cancel token via the SDK's own http service so it's guaranteed
+// compatible with whatever request-cancellation mechanism the SDK's bundled
+// HTTP client actually checks — the SDK uses axios's CancelToken, not the
+// native AbortController/AbortSignal this tool used before migrating.
+const cancelTokenFactory = new HttpService();
 
-  for (let attempt = 0; attempt < 6; attempt++) {
-    await throttle();
-    const res = await fetch(url, { headers, signal });
+export type CancelHandle = IHttpCancelRequestToken<unknown>;
 
-    if (res.status === 429) {
-      const retryAfter = Number(res.headers.get("Retry-After")) || 2;
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
-      continue;
-    }
+export function createCancelHandle(): CancelHandle {
+  return cancelTokenFactory.createCancelToken();
+}
 
-    if (!res.ok) {
-      let message = `Request failed (${res.status})`;
-      try {
-        const body = await res.json();
-        if (body?.message) message = body.message;
-      } catch {
-        // ignore parse failure, use default message
-      }
-      throw new KontentApiError(`${message} — ${url}`);
-    }
+function createClient(environmentId: string, apiKey: string | undefined, usePreview: boolean): DeliveryClient {
+  return new DeliveryClient({
+    environmentId,
+    previewApiKey: usePreview ? apiKey : undefined,
+    secureApiKey: usePreview ? undefined : apiKey,
+    defaultQueryConfig: {
+      usePreviewMode: usePreview,
+      useSecuredMode: !usePreview && !!apiKey,
+    },
+    httpService: new ThrottledHttpService(),
+  });
+}
 
-    return { data: await res.json(), response: res };
+// Normalizes whatever the SDK throws (a DeliveryError with a `.message` but
+// no Error prototype, a raw axios error, a cancellation) into a real Error
+// subclass, so callers can keep doing `err instanceof Error ? err.message : ...`.
+async function unwrap<T>(promise: Promise<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    const message =
+      err && typeof err === "object" && "message" in err ? String((err as { message?: unknown }).message) : String(err);
+    throw new KontentApiError(message);
   }
-
-  throw new KontentApiError(`Too many rate-limit retries — ${url}`);
 }
 
 export async function fetchAllLanguages(
   environmentId: string,
   apiKey: string | undefined,
   usePreview: boolean,
-  signal: AbortSignal,
+  cancelHandle: CancelHandle,
 ): Promise<KontentLanguage[]> {
-  const result: KontentLanguage[] = [];
-  let url: string | null = `${baseUrl(environmentId, usePreview)}/languages?limit=100`;
-
-  while (url) {
-    const { data } = await fetchJson(url, apiKey, signal);
-    for (const lang of data.languages ?? []) {
-      result.push({ id: lang.system.id, name: lang.system.name, codename: lang.system.codename });
-    }
-    url = data.pagination?.next_page || null;
-  }
-
-  return result;
+  const client = createClient(environmentId, apiKey, usePreview);
+  const result = await unwrap(client.languages().queryConfig({ cancelToken: cancelHandle }).toAllPromise());
+  return result.data.items.map((lang) => ({ id: lang.system.id, name: lang.system.name, codename: lang.system.codename }));
 }
 
 export async function fetchAllContentTypes(
   environmentId: string,
   apiKey: string | undefined,
   usePreview: boolean,
-  signal: AbortSignal,
+  cancelHandle: CancelHandle,
 ): Promise<KontentContentType[]> {
-  const result: KontentContentType[] = [];
-  let url: string | null = `${baseUrl(environmentId, usePreview)}/types?limit=100`;
-
-  while (url) {
-    const { data } = await fetchJson(url, apiKey, signal);
-    for (const type of data.types ?? []) {
-      // Find this type's URL slug element, if it has one — lets us later ask
-      // for just that element's value instead of every element.
-      const slugEntry = Object.entries(type.elements ?? {}).find(
-        ([, el]) => (el as { type?: string }).type === "url_slug",
-      );
-      result.push({
-        id: type.system.id,
-        name: type.system.name,
-        codename: type.system.codename,
-        slugElementCodename: slugEntry?.[0],
-      });
-    }
-    url = data.pagination?.next_page || null;
-  }
-
-  return result;
+  const client = createClient(environmentId, apiKey, usePreview);
+  const result = await unwrap(client.types().queryConfig({ cancelToken: cancelHandle }).toAllPromise());
+  return result.data.items.map((type) => {
+    // Find this type's URL slug element, if it has one — lets us later ask
+    // for just that element's value instead of every element.
+    const slugElement = type.elements.find((el) => el.type === "url_slug");
+    return {
+      id: type.system.id,
+      name: type.system.name,
+      codename: type.system.codename,
+      slugElementCodename: slugElement?.codename,
+    };
+  });
 }
 
 /**
@@ -133,51 +130,64 @@ export async function fetchAllItemsForLanguage(
   apiKey: string | undefined,
   usePreview: boolean,
   languageCodename: string,
-  signal: AbortSignal,
+  cancelHandle: CancelHandle,
   onPage?: (itemsSoFar: number) => void,
   typeCodenames?: string[],
   elementCodenames?: string[],
 ): Promise<ItemSystem[]> {
-  const result: ItemSystem[] = [];
-  const qs = new URLSearchParams({
-    language: languageCodename,
+  const client = createClient(environmentId, apiKey, usePreview);
+
+  let query = client
+    .itemsFeed()
+    .languageParameter(languageCodename)
     // Without this, items that don't actually have a variant in this language
     // are returned as a language-fallback copy of the default language's
     // variant, which would make every item look "translated". Filtering on
     // system.language forces the API to return only genuine variants.
     // https://kontent.ai/learn/develop/hello-world/get-localized-content/typescript#a-ignoring-language-fallbacks
-    "system.language": languageCodename,
-  });
-  if (elementCodenames && elementCodenames.length > 0) {
-    // Ask for specific elements (e.g. a URL slug) only when a caller actually
-    // needs them — otherwise fall through to the zero-elements trick below.
-    qs.set("elements", elementCodenames.join(","));
-  } else {
-    // `elements=` (empty) does NOT restrict anything — the API treats a blank
-    // value as "no filter" and still returns every element's full content.
-    // Passing a codename that can never match a real element (no content
-    // type uses `""` as a codename) makes the API return each item with an
-    // empty elements object instead, which is all we need since we only read
-    // item.system — this cuts response payloads by ~90% in testing.
-    qs.set("elements", '""');
-  }
+    .equalsFilter("system.language", languageCodename);
+
+  query =
+    elementCodenames && elementCodenames.length > 0
+      ? // Ask for specific elements (e.g. a URL slug) only when a caller
+        // actually needs them — otherwise fall through to the zero-elements
+        // trick below.
+        query.elementsParameter(elementCodenames)
+      : // An empty elements filter does NOT restrict anything — the API
+        // treats no elements given as "no filter" and still returns every
+        // element's full content. Passing a codename that can never match a
+        // real element (no content type uses `""` as a codename) makes the
+        // API return each item with an empty elements object instead, which
+        // is all we need since we only read item.system — this cuts response
+        // payloads by ~90% in testing.
+        query.elementsParameter(['""']);
+
   // Scoping to specific content types up front shrinks the crawl itself,
   // rather than fetching everything and discarding items client-side.
   if (typeCodenames && typeCodenames.length > 0) {
-    qs.set("system.type[in]", typeCodenames.join(","));
+    query = query.types(typeCodenames);
   }
-  const url = `${baseUrl(environmentId, usePreview)}/items-feed?${qs.toString()}`;
 
-  let continuationToken: string | null = null;
-  do {
-    const extraHeaders = continuationToken ? { "X-Continuation": continuationToken } : undefined;
-    const { data, response } = await fetchJson(url, apiKey, signal, extraHeaders);
-    for (const item of data.items ?? []) {
-      result.push({ ...item.system, elements: item.elements } as ItemSystem);
-    }
-    onPage?.(result.length);
-    continuationToken = response.headers.get("X-Continuation");
-  } while (continuationToken);
+  let itemsSoFar = 0;
+  const result = await unwrap(
+    query.queryConfig({ cancelToken: cancelHandle }).toAllPromise({
+      responseFetched: (response) => {
+        itemsSoFar += response.data.items.length;
+        onPage?.(itemsSoFar);
+      },
+    }),
+  );
 
-  return result;
+  return result.data.items.map((item) => ({
+    id: item.system.id,
+    name: item.system.name,
+    codename: item.system.codename,
+    type: item.system.type,
+    collection: item.system.collection,
+    language: item.system.language,
+    lastModified: item.system.lastModified,
+    workflowStep: item.system.workflowStep ?? undefined,
+    workflow: item.system.workflow ?? undefined,
+    elements: item.elements as ItemSystem["elements"],
+  }));
 }

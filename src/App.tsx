@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import "./App.css";
-import { fetchAllContentTypes, fetchAllItemsForLanguage, fetchAllLanguages, setRequestDelayMs } from "./kontentApi";
+import {
+  createCancelHandle,
+  fetchAllContentTypes,
+  fetchAllItemsForLanguage,
+  fetchAllLanguages,
+  setRequestDelayMs,
+} from "./kontentApi";
+import type { CancelHandle } from "./kontentApi";
 import type { KontentLanguage, KontentContentType, ItemSystem, ItemCoverageRow } from "./types";
 import { MISSING_VARIANT } from "./types";
 import { downloadCsv } from "./csv";
@@ -170,7 +177,7 @@ function App() {
     [allRows, onlyIncomplete],
   );
 
-  const abortRef = useRef<AbortController | null>(null);
+  const cancelRef = useRef<CancelHandle | null>(null);
   // Preview mode is an explicit opt-in, not implied by "a key was given" — a
   // key may only be there for Secure Access on the published endpoint.
   const usePreview = includeUnpublished;
@@ -190,16 +197,16 @@ function App() {
     setErrorMessage("");
     setLog([]);
     setRequestDelayMs(effectiveRequestDelayMs);
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const cancelHandle = createCancelHandle();
+    cancelRef.current = cancelHandle;
 
     try {
       appendLog("Fetching languages...");
-      const langs = await fetchAllLanguages(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
+      const langs = await fetchAllLanguages(environmentId.trim(), apiKey.trim() || undefined, usePreview, cancelHandle);
       appendLog(`Found ${langs.length} language(s).`);
 
       appendLog("Fetching content types...");
-      const types = await fetchAllContentTypes(environmentId.trim(), apiKey.trim() || undefined, usePreview, controller.signal);
+      const types = await fetchAllContentTypes(environmentId.trim(), apiKey.trim() || undefined, usePreview, cancelHandle);
       appendLog(`Found ${types.length} content type(s).`);
 
       const foundDefault = langs.find((l) => l.id === DEFAULT_LANGUAGE_ID);
@@ -270,8 +277,8 @@ function App() {
     setAllRows([]);
     setAllLanguages([]);
     setRequestDelayMs(effectiveRequestDelayMs);
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const cancelHandle = createCancelHandle();
+    cancelRef.current = cancelHandle;
 
     // Omit the filter entirely when every type is selected — equivalent
     // result, shorter query string, and avoids missing a type that's added
@@ -326,7 +333,7 @@ function App() {
               apiKey.trim() || undefined,
               preview,
               lang.codename,
-              controller.signal,
+              cancelHandle,
               (count) => setProgress(lang.codename, `${startMessage}... ${count} so far`),
               typeFilter,
               elementCodenames,
@@ -376,7 +383,7 @@ function App() {
           const byCodename = itemsByLanguage.get(lang.codename);
           if (!byCodename) return false;
           for (const item of byCodename.values()) {
-            if ((item.workflow_step ?? "unknown") !== "published") return true;
+            if ((item.workflowStep ?? "unknown") !== "published") return true;
           }
           return false;
         });
@@ -415,7 +422,7 @@ function App() {
         for (const lang of orderedLanguages) {
           const variant = itemsByLanguage.get(lang.codename)?.get(itemCodename);
           if (variant) {
-            let status = variant.workflow_step ?? (usePreview ? "unknown" : "published");
+            let status = variant.workflowStep ?? (usePreview ? "unknown" : "published");
             if (status !== "published" && publishedItemsByLanguage.get(lang.codename)?.has(itemCodename)) {
               status = `${status}/published`;
             }
@@ -477,7 +484,7 @@ function App() {
   }
 
   function handleCancel() {
-    abortRef.current?.abort();
+    cancelRef.current?.cancel();
   }
 
   const isConnecting = stage === "connecting";

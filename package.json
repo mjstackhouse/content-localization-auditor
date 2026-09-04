@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@kontent-ai/core-sdk": "^10.12.10",
     "@kontent-ai/custom-app-sdk": "^2.2.0",
+    "@kontent-ai/delivery-sdk": "^16.4.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
